@@ -37,6 +37,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
+    'api.apps.ApiConfig'
 ]
 
 MIDDLEWARE = [
@@ -80,6 +82,8 @@ DATABASES = {
     }
 }
 
+MONGO_DB_NAME = "SPIN_A_YARN_DATABASE"
+MONGO_URI = "mongodb://localhost:27017/"
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
