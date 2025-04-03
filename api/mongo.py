@@ -2,6 +2,7 @@ from pymongo import MongoClient
 from django.conf import settings
 from bson import ObjectId
 from datetime import datetime
+import random
 
 client = MongoClient(settings.MONGO_URI)
 db = client[settings.MONGO_DB_NAME]
@@ -13,8 +14,8 @@ def insert_message(author_id, room_id, content):
     message = {
         "author_id": ObjectId(author_id),
         "room_id": ObjectId(room_id),
-        "content": ObjectId(content),
-        "created": datetime.now(tz=datetime.timezone.utc),
+        "content": content,
+        "created": datetime.now(),
     }
 
     res = messages.insert_one(message)
@@ -32,6 +33,7 @@ def insert_room(creator_id):
         {
             "creator_id": ObjectId(creator_id),
             "participants": [ObjectId(creator_id)],
+            "current_writer": ObjectId(creator_id)
         }
     )
 
@@ -45,12 +47,50 @@ def get_room(room_id):
     res = rooms.find_one({"_id": ObjectId(room_id)})
     return res
 
-def submit_message(author_id, room_id, content):
-    res = messages.insert_one({
-        "author_id": ObjectId(author_id),
-        "room_id": ObjectId(room_id),
-        "content": content,
-    })
+def add_participant(guest_id, room_id):
+    rooms.update_one(
+        {"_id": ObjectId(room_id)},
+        {"$push": {"participants": ObjectId(guest_id)}}
+    )
 
-    return str(res.inserted_id)
+    return "OK"
 
+def get_random_room():
+    room_ids = list(rooms.find())
+    idx = random.randint(0, len(room_ids)-1)
+    room_id = str(room_ids[idx]["_id"])
+    return room_id
+
+def get_all_messages(room_id):
+    query_result = messages.find({"room_id": ObjectId(room_id)})
+
+    message_list = []
+    for message in query_result:
+        message_list.append({
+            "author_id": str(message["author_id"]),
+            "content": message["content"],
+            "created": message["created"],
+        })
+
+    return message_list
+
+def get_room_participants(room_id):
+    room = rooms.find_one({"_id": ObjectId(room_id)})
+    participants = list(map(str, room["participants"]))
+
+    return participants
+
+def update_current_writer(current_writer_id, room_id):
+    room = rooms.find_one({"_id", ObjectId(room_id)})
+    participants = room["participants"]
+    i = 0
+    for p_id in participants:
+        if str(p_id) == current_writer_id:
+            i += 1
+            break
+        i += 1
+    
+    if i<len(participants):
+        return str(participants[i]["_id"])
+    
+    return None
