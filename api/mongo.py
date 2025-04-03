@@ -11,9 +11,9 @@ rooms = db["rooms"]
 
 def insert_message(author_id, room_id, content):
     message = {
-        "author_id": author_id,
-        "room_id": room_id,
-        "content": content,
+        "author_id": ObjectId(author_id),
+        "room_id": ObjectId(room_id),
+        "content": ObjectId(content),
         "created": datetime.now(tz=datetime.timezone.utc),
     }
 
@@ -31,10 +31,26 @@ def insert_room(creator_id):
     res = rooms.insert_one(
         {
             "creator_id": ObjectId(creator_id),
-            "participants": [creator_id],
+            "participants": [ObjectId(creator_id)],
         }
     )
 
     return str(res.inserted_id)
 
+def get_guest(guest_id):
+    res = guests.find_one({"_id": ObjectId(guest_id)})
+    return res
+
+def get_room(room_id):
+    res = rooms.find_one({"_id": ObjectId(room_id)})
+    return res
+
+def submit_message(author_id, room_id, content):
+    res = messages.insert_one({
+        "author_id": ObjectId(author_id),
+        "room_id": ObjectId(room_id),
+        "content": content,
+    })
+
+    return str(res.inserted_id)
 
