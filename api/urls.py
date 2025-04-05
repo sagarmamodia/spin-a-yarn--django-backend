@@ -9,5 +9,6 @@ urlpatterns = [
     path('get-all-messages/<str:room_id>/', views.get_all_messages_view),
     path('get-participants/<str:room_id>/', views.get_room_participants),
     path('update-current-writer/', views.update_current_writer_view),
+    path('get-current-writer/<str:room_id>/', views.get_current_writer),
     path('join-room/', views.join_room_view),
 ]

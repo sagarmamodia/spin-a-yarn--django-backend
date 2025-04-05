@@ -33,19 +33,11 @@ def insert_room(creator_id):
         {
             "creator_id": ObjectId(creator_id),
             "participants": [ObjectId(creator_id)],
-            "current_writer": ObjectId(creator_id)
+            "current_writer_id": ObjectId(creator_id)
         }
     )
 
     return str(res.inserted_id)
-
-def get_guest(guest_id):
-    res = guests.find_one({"_id": ObjectId(guest_id)})
-    return res
-
-def get_room(room_id):
-    res = rooms.find_one({"_id": ObjectId(room_id)})
-    return res
 
 def add_participant(guest_id, room_id):
     rooms.update_one(
@@ -57,6 +49,9 @@ def add_participant(guest_id, room_id):
 
 def get_random_room():
     room_ids = list(rooms.find())
+    if len(room_ids) == 0:
+        return None
+    
     idx = random.randint(0, len(room_ids)-1)
     room_id = str(room_ids[idx]["_id"])
     return room_id
@@ -76,8 +71,16 @@ def get_all_messages(room_id):
 
 def get_room_participants(room_id):
     room = rooms.find_one({"_id": ObjectId(room_id)})
-    participants = list(map(str, room["participants"]))
+    participant_ids = room["participants"]
 
+    participants = []
+    # participants = guests.find({"_id": {"$in": participant_ids}})
+
+    for _id in participant_ids:
+        guest_name = guests.find_one({"_id": _id})["name"]
+        participants.append({"guestId": str(_id), "guestName": guest_name})
+    
+    print(participants)
     return participants
 
 def update_current_writer(current_writer_id, room_id):
@@ -94,3 +97,8 @@ def update_current_writer(current_writer_id, room_id):
         return str(participants[i]["_id"])
     
     return None
+
+def get_current_writer(room_id):
+    current_writer_id = rooms.find_one({"_id": ObjectId(room_id)})["current_writer_id"]
+    current_writer_name = guests.find_one({"_id": current_writer_id})["name"]
+    return str(current_writer_id), current_writer_name
