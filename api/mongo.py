@@ -75,30 +75,51 @@ def get_room_participants(room_id):
 
     participants = []
     # participants = guests.find({"_id": {"$in": participant_ids}})
-
     for _id in participant_ids:
         guest_name = guests.find_one({"_id": _id})["name"]
         participants.append({"guestId": str(_id), "guestName": guest_name})
     
-    print(participants)
     return participants
 
-def update_current_writer(current_writer_id, room_id):
-    room = rooms.find_one({"_id", ObjectId(room_id)})
+def update_current_writer(room_id):
+    room = rooms.find_one({"_id": ObjectId(room_id)})
+    current_writer_id = room['current_writer_id']
     participants = room["participants"]
     i = 0
     for p_id in participants:
-        if str(p_id) == current_writer_id:
+        if p_id == current_writer_id:
             i += 1
             break
         i += 1
     
     if i<len(participants):
-        return str(participants[i]["_id"])
-    
-    return None
+        rooms.update_one(
+            {"_id": ObjectId(room_id)},
+            {"$set": {"current_writer_id": participants[i]}}
+        )
+        return str(participants[i])
+    else:
+        rooms.update_one(
+            {"_id": ObjectId(room_id)},
+            {"$set": {"current_writer_id": participants[0]}}
+        )
+        return str(participants[0])
 
 def get_current_writer(room_id):
     current_writer_id = rooms.find_one({"_id": ObjectId(room_id)})["current_writer_id"]
     current_writer_name = guests.find_one({"_id": current_writer_id})["name"]
     return str(current_writer_id), current_writer_name
+
+def update_db(guest_id, room_id):
+    guests.delete_one({"_id": ObjectId(guest_id)})
+    rooms.update_one(
+        {"_id": ObjectId(room_id)},
+        {"$pull": {"participants": ObjectId(guest_id)}}
+        )
+    
+    partcipants = get_room_participants(room_id)
+    if len(partcipants) == 0:
+        rooms.delete_one({"_id": ObjectId(room_id)})
+        messages.delete_many({"room_id": ObjectId(room_id)})
+
+    return "OK"

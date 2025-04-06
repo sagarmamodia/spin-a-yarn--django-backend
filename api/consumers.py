@@ -2,11 +2,18 @@ import json
 import os
 from channels.generic.websocket import WebsocketConsumer
 from asgiref.sync import async_to_sync
+from .jwt_auth import decode_jwt
+from . import mongo
 
 class RoomConsumer(WebsocketConsumer):
     def connect(self):
-        print("Connect attempt")
-        self.room_id = self.scope['url_route']['kwargs']['room_id']
+        token = self.scope['url_route']['kwargs']['token']
+        try:
+            payload = decode_jwt(token)
+            self.guest_id = payload['guest_id']
+            self.room_id = payload['room_id']
+        except:
+            return
 
         async_to_sync(self.channel_layer.group_add)(
             self.room_id, self.channel_name
@@ -14,6 +21,8 @@ class RoomConsumer(WebsocketConsumer):
         self.accept()
 
     def disconnect(self, close_code):
+        mongo.update_db(self.guest_id, self.room_id)
+        
         async_to_sync(self.channel_layer.group_discard)(
             self.room_id, self.channel_name
         ) 

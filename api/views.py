@@ -5,6 +5,7 @@ import json
 from . import mongo
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
+from .jwt_auth import jwt_required, generate_jwt
 
 # Create your views here.
 
@@ -19,7 +20,7 @@ def join_room_view(request):
 
     RESPONSE JSON FORMAT
     {
-        guestId: <id>
+        token: <token>,
     }
     """
     if request.method == "POST":
@@ -28,9 +29,9 @@ def join_room_view(request):
         room_id = data["roomId"]
         try:
             guest_id = mongo.insert_guest(guest_name)
-            print(guest_id, room_id)
             mongo.add_participant(guest_id, room_id)
-            return JsonResponse({"guestId": guest_id, "guestName": guest_name}, status=200)
+            token = generate_jwt({"guest_id": guest_id, "guest_name": guest_name, "room_id": room_id})
+            return JsonResponse({"token": token, "guest_id": guest_id}, status=200)
         except:
             return HttpResponse("Internal Server Error", status=500)
 
@@ -47,23 +48,22 @@ def create_room_view(request):
 
     RESPONSE JSON FORMAT 
     {
-        guestId: <id>
+        token: <token>,
         roomId: <id>
     }
     """
     if request.method == "POST":
         data = json.loads(request.body)
-        creator_name = data["guestName"]
+        owner_name = data["guestName"]
         
         try:
-            guest_id = mongo.insert_guest(creator_name)
+            guest_id = mongo.insert_guest(owner_name)
             room_id = mongo.insert_room(guest_id)
         except:
-            return HttpResponse("Internal Server Error", status=500)
+            return JsonResponse({"error": "Internal Server Error"}, status=500)
 
-        res_data = {"guestId": guest_id, "guestName": creator_name, "roomId": room_id}   
-        
-        return JsonResponse(res_data)
+        token = generate_jwt({"guest_id": guest_id, "room_id": room_id})
+        return JsonResponse({"token": token, "guest_id": guest_id, "roomId": room_id})
     
     return HttpResponse("Only POST requests are allowed.", status=403)
 
@@ -82,7 +82,8 @@ def get_random_room_view(request):
         return HttpResponse("Internal Server Error", status=500)
     return JsonResponse({"roomId": random_room_id}, status=200)
 
-def get_all_messages_view(request, room_id):
+@jwt_required
+def get_all_messages_view(request):
     """
     RESPONSE JSON FORMAT
     {
@@ -91,49 +92,27 @@ def get_all_messages_view(request, room_id):
     """
     
     try:
-        message_list = mongo.get_all_messages(room_id)
+        message_list = mongo.get_all_messages(request.room_id)
         return JsonResponse({"messages": message_list}, status=200)
     except:
-        return HttpResponse("Internal Server Error", status=500)
+        return JsonResponse({"error": "Internal Sever Error"}, status=500)
 
-@csrf_exempt
-def get_room_participants(request, room_id):
+@jwt_required
+def get_room_participants(request):
     """
     RESPONSE JSON FORMAT
     {
-        participants: [<id>, ...]
+        participants: [{guest_id: <id>, guest_name: <str>}, ...]
     }
     """
     try:
-        participants = mongo.get_room_participants(room_id)
+        participants = mongo.get_room_participants(request.room_id)
         return JsonResponse({"participants": participants}, status=200)
     except:
-        return HttpResponse("Internal Sever Error", status=500)
+        return JsonResponse({"error": "Internal Sever Error"}, status=500)
 
-def update_current_writer_view(request):
-    """
-    POST DATA FORMAT
-    {
-        "currentWriterId": <id>,
-        "roomId": <id>
-    }
-    
-    RESPONSE JSON FORMAT
-    {
-        "currentWriterId": <id>,
-    }
-    """
-    if request.method == "POST":
-        data = json.loads(request.body)
-        current_writer_id = data["currentWriterId"]
-        room_id = data["room_id"]
-        try:
-            updated_writer_id = mongo.update_current_writer(current_writer_id, room_id)
-            return JsonResponse({"currentWriterId": updated_writer_id}, status=200)
-        except:
-            return HttpResponse("Internal Server Error", status=500)
-        
-def get_current_writer(request, room_id):
+@jwt_required
+def get_current_writer(request):
     """
     RESPONSE JSON FORMAT
     {
@@ -141,23 +120,24 @@ def get_current_writer(request, room_id):
         "currentWriterName": <str>
     }
     """
-
-    current_writer_id, current_writer_name = mongo.get_current_writer(room_id)
+    try:
+        current_writer_id, current_writer_name = mongo.get_current_writer(request.room_id)
+    except:
+        return JsonResponse({"error": "Internal Sever Error"}, status=500)
     return  JsonResponse({"currentWriterId": current_writer_id, "currentWriterName": current_writer_name}, status=200)
 
 @csrf_exempt
+@jwt_required
 def submit_message_view(request):
     """
     POST DATA FORMAT 
     {
-        roomId: <id>
-        guestId: <id>
         content: <str>
     }
-
+    
     RESPONSE JSON FORMAT
     {
-        Response: OK
+        response: OK
     }
 
     CHANNEL DATA FORMAT
@@ -169,15 +149,21 @@ def submit_message_view(request):
     """
     if request.method=="POST":
         data = json.loads(request.body)
-        room_id = data["roomId"]
-        guest_id = data["guestId"]
+        room_id = request.room_id
+        guest_id = request.guest_id
         content = data["content"]
-        
-        # check if both room and guest exists
-        if mongo.get_room(room_id) is None or mongo.get_guest(guest_id) is None:
-            return HttpResponse("Incorrect roomId or guestId", status=404)
+   
+        try:
+            res = mongo.insert_message(guest_id, room_id, content)
+        except:
+            return JsonResponse({"error": "Internal Server Error"}, status=500)
 
-        res = mongo.insert_message(guest_id, room_id, content)
+        #update current writer
+        try:
+            updated_writer_id = mongo.update_current_writer(room_id)
+        except:
+            return JsonResponse({"error": "Failed to update current writer"}, status=500)
+
         if res is not None:
             # Message is added to the database now I want this to communicate to all members of the room
             channel_layer = get_channel_layer()
@@ -194,7 +180,7 @@ def submit_message_view(request):
 
             return JsonResponse({"Response": "OK"}, status=200)
         else:
-            return HttpResponse("Internal Server error", status=500)
+            return JsonResponse({"error": "Internal Server Error"}, status=500)
             
 
     return HttpResponse("Only POST requests are allowed", status=403)
